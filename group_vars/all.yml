@@ -11,6 +11,7 @@ default_ring: ring2-broad
 
 # Small, visible proof that config from Git lands on the laptop.
 base_packages:
+  - ubuntu-server
   - htop
   - jq
   - curl
