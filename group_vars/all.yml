@@ -14,3 +14,4 @@ base_packages:
   - htop
   - jq
   - curl
+  - tree

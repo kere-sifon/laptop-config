@@ -21,8 +21,13 @@ case "$REPO" in *CHANGE-ME*) echo "Set DEFAULT_REPO in this script (or pass the 
 [ "$(id -u)" -eq 0 ] || { echo "run with sudo"; exit 1; }
 export DEBIAN_FRONTEND=noninteractive
 
-apt-get update -qq
-apt-get install -y -qq ansible-core git
+# Skip apt when already installed: a fresh laptop is often busy with unattended-upgrades,
+# and waiting on the apt lock can push this past Fleet's script timeout.
+if ! command -v ansible-pull >/dev/null 2>&1 || ! command -v git >/dev/null 2>&1; then
+  apt-get -o DPkg::Lock::Timeout=120 update -qq
+  apt-get -o DPkg::Lock::Timeout=120 install -y -qq ansible-core git
+fi
+echo "ansible-core present: $(ansible --version | head -1)"
 
 install -d -m 0755 /etc/zt /var/lib/zt
 cat > /etc/zt/ansible-pull.env <<EOF
