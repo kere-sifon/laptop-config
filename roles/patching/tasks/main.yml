@@ -1,0 +1,42 @@
+---
+# Pins apt to the ring's snapshot date and upgrades to exactly that state.
+# Never reboots; records whether a reboot is needed for Fleet to report.
+
+- name: Read this laptop's ring (written by a Fleet script per fleet)
+  ansible.builtin.slurp:
+    src: /etc/zt/ring
+  register: ring_file
+  failed_when: false
+
+- name: Resolve ring
+  ansible.builtin.set_fact:
+    zt_ring: "{{ ((ring_file.content | default('')) | b64decode | trim) or default_ring }}"
+
+- name: Resolve snapshot for ring
+  ansible.builtin.set_fact:
+    zt_snapshot: "{{ ring_snapshots[zt_ring] | default(ring_snapshots[default_ring]) }}"
+
+- name: Pin apt to the ring's snapshot
+  ansible.builtin.copy:
+    dest: /etc/apt/apt.conf.d/50zt-snapshot
+    mode: "0644"
+    content: 'APT::Snapshot "{{ zt_snapshot }}";'
+
+- name: Upgrade to exactly that snapshot
+  ansible.builtin.apt:
+    update_cache: true
+    upgrade: dist
+
+- name: Is a reboot needed?
+  ansible.builtin.stat:
+    path: /var/run/reboot-required
+  register: reboot_flag
+
+- name: Write patch state marker for Fleet
+  ansible.builtin.copy:
+    dest: /etc/zt/patch-state.json
+    mode: "0644"
+    content: >-
+      {{ {'ring': zt_ring, 'snapshot': zt_snapshot,
+          'applied_at': ansible_date_time.iso8601,
+          'reboot_required': reboot_flag.stat.exists} | to_json }}

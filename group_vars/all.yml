@@ -1,0 +1,16 @@
+---
+# Lab safety switch: leave false until the base role is proven, then flip to true in a commit.
+patching_enabled: false
+
+# Ring -> Ubuntu snapshot date. A promotion is a one-line change here.
+ring_snapshots:
+  ring0-pilot: "20261006T000000Z"
+  ring1-early: "20260929T000000Z"
+  ring2-broad: "20260929T000000Z"
+default_ring: ring2-broad
+
+# Small, visible proof that config from Git lands on the laptop.
+base_packages:
+  - htop
+  - jq
+  - curl

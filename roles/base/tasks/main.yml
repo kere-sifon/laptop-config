@@ -1,0 +1,23 @@
+---
+- name: Ensure /etc/zt exists
+  ansible.builtin.file:
+    path: /etc/zt
+    state: directory
+    mode: "0755"
+
+- name: Baseline packages
+  ansible.builtin.apt:
+    name: "{{ base_packages }}"
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Login banner shows the laptop is managed (visible proof of a pull)
+  ansible.builtin.copy:
+    dest: /etc/update-motd.d/99-zt-managed
+    mode: "0755"
+    content: |
+      #!/bin/sh
+      echo
+      echo "This laptop is managed by Celestica IT (ansible-pull)."
+      [ -f /etc/zt/ansible-state.json ] && echo "Last applied: $(cat /etc/zt/ansible-state.json)"

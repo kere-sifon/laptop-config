@@ -1,0 +1,27 @@
+---
+# Entry point that ansible-pull runs on every laptop, against itself.
+- name: Celestica laptop desired state
+  hosts: localhost
+  connection: local
+  become: true
+  gather_facts: true
+
+  roles:
+    - base
+    - role: patching
+      when: patching_enabled | bool
+
+  post_tasks:
+    - name: Record which commit was applied (Fleet checks this)
+      ansible.builtin.command: git -C "{{ playbook_dir }}" rev-parse --short HEAD
+      register: zt_commit
+      changed_when: false
+
+    - name: Write ansible state marker
+      ansible.builtin.copy:
+        dest: /etc/zt/ansible-state.json
+        mode: "0644"
+        content: >-
+          {{ {'commit': zt_commit.stdout,
+              'applied_at': ansible_date_time.iso8601,
+              'patching_enabled': patching_enabled | bool} | to_json }}

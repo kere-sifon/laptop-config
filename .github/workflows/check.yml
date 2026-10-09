@@ -1,0 +1,15 @@
+name: check
+# Every push and PR: catch a broken playbook before laptops pull it.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  syntax:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: pipx install ansible-core
+      - run: ansible-playbook -i localhost, --syntax-check local.yml
+      - run: bash -n bootstrap/install-ansible-pull.sh
