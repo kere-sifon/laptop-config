@@ -48,6 +48,7 @@ fi
 ansible-pull -U "$ZT_REPO" -C "$ZT_BRANCH" -d "$DIR" -i localhost, "${mode[@]}" local.yml
 rc=$?
 date -Is > /etc/zt/ansible-last-check
+[ "$rc" -eq 0 ] && touch /etc/zt/ansible-last-ok      # Fleet checks this file's age
 [ "$rc" -eq 0 ] && [ "${#mode[@]}" -eq 0 ] && touch "$FULL_STAMP"
 echo "rc=$rc" >> /etc/zt/ansible-last-check
 exit "$rc"

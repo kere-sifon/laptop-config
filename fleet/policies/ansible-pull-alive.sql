@@ -1,10 +1,8 @@
 -- ansible-pull-alive.sql
--- Passes when the ansible-pull timer has checked Git in the last 2 hours with rc=0.
--- Failing means: timer stopped, no network, Git unreachable, or the playbook is erroring.
--- Pair with automation: Run script > bootstrap/install-ansible-pull.sh (reinstalls the timer).
-SELECT 1
-FROM file_lines AS l
-JOIN file AS f ON f.path = l.path
-WHERE l.path = '/etc/zt/ansible-last-check'
-  AND l.line = 'rc=0'
-  AND f.mtime > (strftime('%s','now') - 7200);
+-- Passes when ansible-pull has completed successfully (rc=0) in the last 2 hours.
+-- The wrapper touches /etc/zt/ansible-last-ok only on success, so this one file covers
+-- "timer running", "network/GitHub reachable" and "playbook not erroring".
+-- No automation: a failure here needs a person (network, repo, or playbook problem).
+SELECT 1 FROM file
+WHERE path = '/etc/zt/ansible-last-ok'
+  AND mtime > (CAST(strftime('%s','now') AS INTEGER) - 7200);
