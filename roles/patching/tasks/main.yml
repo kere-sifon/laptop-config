@@ -20,7 +20,11 @@
   ansible.builtin.copy:
     dest: /etc/apt/apt.conf.d/50zt-snapshot
     mode: "0644"
-    content: 'APT::Snapshot "{{ zt_snapshot }}";'
+    # Always-Include-Phased-Updates: Ubuntu's phasing randomly holds updates back per machine.
+    # The rings already stage rollouts, and every laptop in a ring must end up on identical versions.
+    content: |
+      APT::Snapshot "{{ zt_snapshot }}";
+      APT::Get::Always-Include-Phased-Updates "true";
 
 - name: Upgrade to exactly that snapshot
   ansible.builtin.apt:
