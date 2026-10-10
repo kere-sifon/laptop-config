@@ -16,3 +16,4 @@ base_packages:
   - jq
   - curl
   - tree
+  - terraform

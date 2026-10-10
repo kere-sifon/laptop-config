@@ -1,4 +1,20 @@
 ---
+- name: HashiCorp apt repository (terraform)
+  ansible.builtin.deb822_repository:
+    name: hashicorp
+    types: deb
+    uris: https://apt.releases.hashicorp.com
+    suites: "{{ ansible_distribution_release }}"
+    components: main
+    architectures: "{{ 'arm64' if ansible_architecture == 'aarch64' else 'amd64' }}"
+    signed_by: https://apt.releases.hashicorp.com/gpg
+  register: hashicorp_repo
+
+- name: Refresh apt after adding the repo
+  ansible.builtin.apt:
+    update_cache: true
+  when: hashicorp_repo.changed
+
 - name: Ensure /etc/zt exists
   ansible.builtin.file:
     path: /etc/zt
