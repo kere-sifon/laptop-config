@@ -9,6 +9,11 @@ ring_snapshots:
   ring2-broad: "20261009T000000Z"
 default_ring: ring2-broad
 
+# Removed if found. 'ansible' = full community bundle (universe, ESM-only fixes, ~35 CVEs);
+# ansible-pull only needs ansible-core, which stays.
+banned_packages:
+  - ansible
+
 # Small, visible proof that config from Git lands on the laptop.
 base_packages:
   - ubuntu-server   # the build's metapackage; on Dell laptops use ubuntu-desktop (+ Dell OEM meta)

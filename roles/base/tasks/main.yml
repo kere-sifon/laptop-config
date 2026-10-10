@@ -21,6 +21,12 @@
     state: directory
     mode: "0755"
 
+- name: Packages that must not be present
+  ansible.builtin.apt:
+    name: "{{ banned_packages }}"
+    state: absent
+    purge: true
+
 - name: Baseline packages
   ansible.builtin.apt:
     name: "{{ base_packages }}"
