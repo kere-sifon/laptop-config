@@ -62,7 +62,9 @@ jobs:
               print(f"ring0 moved {age} day(s) ago; skipping to protect soak time (use force to override)")
               raise SystemExit(0)
           if emergency:
-              new = {"ring0-pilot": today, "ring1-early": today, "ring2-broad": today}
+              # Current time, not midnight: the urgent fix may have been published earlier today.
+              stamp = now.strftime("%Y%m%dT%H%M%SZ")
+              new = {"ring0-pilot": stamp, "ring1-early": stamp, "ring2-broad": stamp}
           else:
               new = {"ring0-pilot": today, "ring1-early": r0, "ring2-broad": get("ring1-early")}
           for ring, date in new.items():
