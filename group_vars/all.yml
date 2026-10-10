@@ -5,7 +5,7 @@ patching_enabled: true
 # Ring -> Ubuntu snapshot date. A promotion is a one-line change here.
 ring_snapshots:
   ring0-pilot: "20261010T000000Z"
-  ring1-early: "20261009T000000Z"
+  ring1-early: "20261010T000000Z"
   ring2-broad: "20261009T000000Z"
 default_ring: ring2-broad
 
