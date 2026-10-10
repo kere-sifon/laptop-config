@@ -1,26 +1,38 @@
 name: ring-rotate
-# Moves the patch rings forward and opens a pull request for approval.
+# Moves the patch rings forward, validates the playbook, opens a PR, and (optionally) merges it.
 #   Weekly (Monday):  ring0-pilot -> today, ring1-early -> ring0's old date, ring2-broad -> ring1's old date
 #                     so each snapshot soaks one week in pilot and one week in early before everyone gets it.
-#   Manual "emergency": all three rings -> today (urgent CVE).
-# Merging the PR is the approval; laptops pick it up on their next ansible-pull (~35 min).
+#   Manual run options:
+#     emergency: all three rings -> today (urgent CVE)
+#     force:     rotate even if ring0 moved less than 6 days ago (testing)
+#
+# Auto-merge: set repository variable RING_AUTO_MERGE = true
+#   (Settings > Secrets and variables > Actions > Variables). Unset/false = PR waits for a human.
 #
 # One-time repo setting: Settings > Actions > General > Workflow permissions >
 #   "Read and write" + "Allow GitHub Actions to create and approve pull requests".
 
 on:
   schedule:
-    - cron: "0 13 * * 1"   # Mondays 13:00 UTC (09:00 Toronto in summer)
+    - cron: "0 13 * * 1"   # Mondays 13:00 UTC (09:00 Toronto in summer, 08:00 in winter)
   workflow_dispatch:
     inputs:
       emergency:
         description: "Move ALL rings to today (urgent fix)"
         type: boolean
         default: false
+      force:
+        description: "Rotate even if the last rotation was under 6 days ago (testing)"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
   pull-requests: write
+
+concurrency:
+  group: ring-rotate
+  cancel-in-progress: false
 
 jobs:
   rotate:
@@ -29,8 +41,10 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Compute new ring dates
+        id: dates
         env:
           EMERGENCY: ${{ inputs.emergency || false }}
+          FORCE: ${{ inputs.force || false }}
         run: |
           python3 - <<'PY'
           import os, re, datetime
@@ -38,43 +52,53 @@ jobs:
           s = open(p).read()
           def get(ring):
               return re.search(rf'^\s+{ring}:\s*"([0-9]{{8}}T[0-9]{{6}}Z)"', s, re.M).group(1)
-          today = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT000000Z")
-          if os.environ.get("EMERGENCY") == "true":
+          now = datetime.datetime.now(datetime.timezone.utc)
+          today = now.strftime("%Y%m%dT000000Z")
+          r0 = get("ring0-pilot")
+          age = (now - datetime.datetime.strptime(r0, "%Y%m%dT%H%M%SZ").replace(tzinfo=datetime.timezone.utc)).days
+          emergency = os.environ.get("EMERGENCY") == "true"
+          force = os.environ.get("FORCE") == "true"
+          if not emergency and not force and age < 6:
+              print(f"ring0 moved {age} day(s) ago; skipping to protect soak time (use force to override)")
+              raise SystemExit(0)
+          if emergency:
               new = {"ring0-pilot": today, "ring1-early": today, "ring2-broad": today}
           else:
-              new = {"ring0-pilot": today, "ring1-early": get("ring0-pilot"), "ring2-broad": get("ring1-early")}
+              new = {"ring0-pilot": today, "ring1-early": r0, "ring2-broad": get("ring1-early")}
           for ring, date in new.items():
               s = re.sub(rf'^(\s+{ring}:\s*)"[^"]*"', rf'\g<1>"{date}"', s, flags=re.M)
           open(p, "w").write(s)
           print(new)
           PY
+          if git diff --quiet; then echo "changed=false" >> "$GITHUB_OUTPUT"; else echo "changed=true" >> "$GITHUB_OUTPUT"; fi
 
-      - name: Push ring-rotate branch
-        id: push
+      # PRs opened with GITHUB_TOKEN do not trigger other workflows, so validate here before merging.
+      - name: Validate playbook
+        if: steps.dates.outputs.changed == 'true'
         run: |
-          if git diff --quiet; then echo "Rings already current"; exit 0; fi
+          pipx install ansible-core
+          ansible-playbook -i localhost, --syntax-check local.yml
+
+      - name: Open pull request
+        id: pr
+        if: steps.dates.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
           branch="ring-rotate-$(date -u +%Y%m%d-%H%M)"
-          echo "branch=$branch" >> "$GITHUB_OUTPUT"
           git config user.name  "ring-rotate[bot]"
           git config user.email "ring-rotate@users.noreply.github.com"
           git checkout -b "$branch"
           git commit -am "Rotate patch rings ($(date -u +%F))"
           git push -u origin "$branch"
+          url=$(gh pr create --base main --head "$branch" \
+            --title "Rotate patch rings ($(date -u +%F))" \
+            --body "$(git diff HEAD~1 -- group_vars/all.yml | grep '^[-+] ')")
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "Opened $url"
 
-      - name: Open pull request
-        if: steps.push.outputs.branch != ''
+      - name: Auto-merge
+        if: steps.dates.outputs.changed == 'true' && vars.RING_AUTO_MERGE == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-          BRANCH: ${{ steps.push.outputs.branch }}
-        run: |
-          body="$(git diff HEAD~1 -- group_vars/all.yml | grep '^[-+] ' || true)"
-          if ! gh pr create --base main --head "$BRANCH" \
-            --title "Rotate patch rings ($(date -u +%F))" \
-            --body "$body"; then
-            echo "::error::GitHub Actions cannot open PRs on this repo yet."
-            echo "Fix: Settings → Actions → General → Workflow permissions:"
-            echo "  • Read and write permissions"
-            echo "  • Allow GitHub Actions to create and approve pull requests"
-            echo "Then open manually: https://github.com/${{ github.repository }}/compare/main...${BRANCH}?expand=1"
-            exit 1
-          fi
+        run: gh pr merge "${{ steps.pr.outputs.url }}" --squash --delete-branch
