@@ -32,6 +32,11 @@
     path: /var/run/reboot-required
   register: reboot_flag
 
+- name: Updates still pending inside this ring's snapshot (should be 0 after the upgrade)
+  ansible.builtin.shell: apt list --upgradable 2>/dev/null | tail -n +2 | wc -l
+  register: pending
+  changed_when: false
+
 - name: Write patch state marker for Fleet
   ansible.builtin.copy:
     dest: /etc/zt/patch-state.json
@@ -39,4 +44,42 @@
     content: >-
       {{ {'ring': zt_ring, 'snapshot': zt_snapshot,
           'applied_at': ansible_date_time.iso8601,
+          'pending_updates': pending.stdout | int,
           'reboot_required': reboot_flag.stat.exists} | to_json }}
+
+# Existence + age of this file is what the "Patched to ring" Fleet policy checks.
+- name: Mark patch-compliant (fully upgraded to the ring's snapshot)
+  ansible.builtin.copy:
+    dest: /etc/zt/patch-compliant
+    mode: "0644"
+    content: "{{ zt_snapshot }} {{ ansible_date_time.iso8601 }}\n"
+  when: pending.stdout | int == 0
+
+- name: Clear patch-compliant marker when updates are still pending
+  ansible.builtin.file:
+    path: /etc/zt/patch-compliant
+    state: absent
+  when: pending.stdout | int != 0
+
+# --- Independent check: Ubuntu's own security-notice (USN) data via OpenSCAP ---
+- name: Scanner prerequisites
+  ansible.builtin.apt:
+    name: [openscap-scanner, bzip2, curl]
+    state: present
+    install_recommends: false
+
+- name: Install USN scan script
+  ansible.builtin.copy:
+    src: zt-usn-scan
+    dest: /usr/local/sbin/zt-usn-scan
+    mode: "0755"
+
+- name: Scan for open Ubuntu Security Notices
+  ansible.builtin.command: /usr/local/sbin/zt-usn-scan
+  register: usn_scan
+  changed_when: false
+  failed_when: false   # a feed download hiccup must not fail patching; Fleet sees a stale result instead
+
+- name: Show scan result
+  ansible.builtin.debug:
+    msg: "{{ usn_scan.stdout | default('') }} {{ usn_scan.stderr | default('') }}"

@@ -25,7 +25,9 @@ export DEBIAN_FRONTEND=noninteractive
 # and waiting on the apt lock can push this past Fleet's script timeout.
 if ! command -v ansible-pull >/dev/null 2>&1 || ! command -v git >/dev/null 2>&1; then
   apt-get -o DPkg::Lock::Timeout=120 update -qq
-  apt-get -o DPkg::Lock::Timeout=120 install -y -qq ansible-core git
+  # --no-install-recommends: ansible-core alone. Without it apt also pulls the full 'ansible'
+  # package (thousands of community collections, hundreds of MB) plus winrm/kerberos/libcloud.
+  apt-get -o DPkg::Lock::Timeout=120 install -y -qq --no-install-recommends ansible-core git
 fi
 echo "ansible-core present: $(ansible --version | head -1)"
 
@@ -41,12 +43,21 @@ set -uo pipefail
 . /etc/zt/ansible-pull.env
 DIR=/var/lib/zt/ansible
 FULL_STAMP=/var/lib/zt/ansible-last-full
+APPLY_RC=/var/lib/zt/ansible-last-apply-rc   # result of the last run that actually applied
 mode=(--only-if-changed)
-if [ ! -f "$FULL_STAMP" ] || [ -n "$(find "$FULL_STAMP" -mmin +1440)" ]; then
-  mode=()   # daily full run for drift repair
+# Full run when: daily drift repair is due, OR the last real apply failed (retry until it succeeds).
+if [ ! -f "$FULL_STAMP" ] || [ -n "$(find "$FULL_STAMP" -mmin +1440)" ] \
+   || [ "$(cat "$APPLY_RC" 2>/dev/null || echo 0)" != "0" ]; then
+  mode=()
 fi
-ansible-pull -U "$ZT_REPO" -C "$ZT_BRANCH" -d "$DIR" -i localhost, "${mode[@]}" local.yml
+out="$(ansible-pull -U "$ZT_REPO" -C "$ZT_BRANCH" -d "$DIR" -i localhost, "${mode[@]}" local.yml 2>&1)"
 rc=$?
+printf '%s\n' "$out"
+if printf '%s' "$out" | grep -q "Repository has not changed"; then
+  rc="$(cat "$APPLY_RC" 2>/dev/null || echo 0)"   # no-op: keep the last real result, don't mask a failure
+else
+  echo "$rc" > "$APPLY_RC"
+fi
 date -Is > /etc/zt/ansible-last-check
 [ "$rc" -eq 0 ] && touch /etc/zt/ansible-last-ok      # Fleet checks this file's age
 [ "$rc" -eq 0 ] && [ "${#mode[@]}" -eq 0 ] && touch "$FULL_STAMP"

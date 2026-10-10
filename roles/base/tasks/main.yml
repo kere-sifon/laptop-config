@@ -1,4 +1,10 @@
 ---
+- name: Ensure /etc/zt exists
+  ansible.builtin.file:
+    path: /etc/zt
+    state: directory
+    mode: "0755"
+
 - name: HashiCorp apt repository (terraform)
   ansible.builtin.deb822_repository:
     name: hashicorp
@@ -14,12 +20,6 @@
   ansible.builtin.apt:
     update_cache: true
   when: hashicorp_repo.changed
-
-- name: Ensure /etc/zt exists
-  ansible.builtin.file:
-    path: /etc/zt
-    state: directory
-    mode: "0755"
 
 - name: Packages that must not be present
   ansible.builtin.apt:

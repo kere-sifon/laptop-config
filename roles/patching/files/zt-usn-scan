@@ -1,0 +1,34 @@
+#!/bin/bash
+# zt-usn-scan: count Ubuntu Security Notices (USNs) that apply to this machine and are not patched.
+# Uses Canonical's OVAL feed (refreshed at most once a day) and OpenSCAP.
+# Writes:
+#   /etc/zt/usn-state.json   {"usn_open": N, "scanned_at": ..., "open_defs": "..."}
+#   /etc/zt/usn-clean        present only when N == 0 (Fleet policy checks existence + age)
+# def:100 is OVAL's "Ubuntu <release> is installed" inventory check, not a vulnerability: excluded.
+set -uo pipefail
+
+D=/var/lib/zt/oval
+mkdir -p "$D"
+REL="$(. /etc/os-release; echo "$VERSION_CODENAME")"
+F="$D/com.ubuntu.$REL.usn.oval.xml"
+URL="${ZT_OVAL_URL:-https://security-metadata.canonical.com/oval/com.ubuntu.$REL.usn.oval.xml.bz2}"
+
+if [ ! -s "$F" ] || [ -n "$(find "$F" -mmin +1380 2>/dev/null)" ]; then
+  if curl -fsSL --retry 3 "$URL" -o "$F.bz2.tmp" && bunzip2 -c "$F.bz2.tmp" > "$F.tmp"; then
+    mv "$F.tmp" "$F"
+  else
+    echo "WARN: could not refresh OVAL feed; using cached copy if present" >&2
+  fi
+  rm -f "$F.bz2.tmp" "$F.tmp"
+fi
+[ -s "$F" ] || { echo "ERROR: no OVAL feed available" >&2; exit 1; }
+
+out="$(oscap oval eval "$F" 2>/dev/null)"
+open_defs="$(printf '%s\n' "$out" | grep ': true$' | grep -v ':def:100:' \
+             | sed -E 's/.*:def:([0-9]+):.*/\1/' | tr '\n' ' ' | sed 's/ $//')"
+if [ -n "$open_defs" ]; then open=$(wc -w <<<"$open_defs"); else open=0; fi
+
+printf '{"usn_open": %d, "scanned_at": "%s", "open_defs": "%s"}\n' \
+  "$open" "$(date -Is)" "$open_defs" > /etc/zt/usn-state.json
+if [ "$open" -eq 0 ]; then date -Is > /etc/zt/usn-clean; else rm -f /etc/zt/usn-clean; fi
+echo "usn_open=$open"

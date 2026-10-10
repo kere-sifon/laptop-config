@@ -48,3 +48,26 @@ laptop (systemd timer, every 30 min) --HTTPS--> this repo
 - The patching role never reboots. It records `reboot_required` for Fleet to report.
 - Every commit to `main` reaches every laptop. Protect the branch, require review, and add
   `--verify-commit` to the wrapper once commits are signed.
+
+## Continuous patching (how a laptop stays patched)
+```
+New/rebuilt laptop enrolls in Fleet
+  -> policy "ansible-pull installed" fails -> Fleet runs install-ansible-pull.sh
+  -> first ansible-pull: base role + patching role
+       pin apt to the ring's snapshot -> dist-upgrade -> pending_updates must be 0
+       -> USN scan (Ubuntu OVAL + OpenSCAP) -> /etc/zt/usn-state.json
+  -> every 30 min: re-run if Git changed; once a day: full run + fresh USN scan
+Monday: GitHub Action "ring-rotate" opens a PR moving ring dates forward -> merge = approval
+  -> laptops upgrade to the new snapshot on their next pull
+```
+
+| Fleet policy | File checked | Meaning |
+|---|---|---|
+| ansible-pull installed | timer active | Agent for desired state is present (automation installs it) |
+| ansible-pull healthy | `/etc/zt/ansible-last-ok` < 2h old | Last pull/apply succeeded |
+| Patched to ring | `/etc/zt/patch-compliant` < 2 days old | Everything the ring's snapshot allows is installed (compliance) |
+| No open security notices | `/etc/zt/usn-clean` < 2 days old | Ubuntu OVAL shows 0 unpatched USNs today (exposure; later rings lag a few days by design) |
+
+One-time GitHub setting for ring-rotate: Settings > Actions > General > Workflow permissions >
+"Read and write" + "Allow GitHub Actions to create and approve pull requests".
+Run it by hand from the Actions tab (workflow_dispatch); tick "emergency" to move all rings to today.

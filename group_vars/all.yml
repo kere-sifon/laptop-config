@@ -21,4 +21,4 @@ base_packages:
   - jq
   - curl
   - tree
-  - terraform
+  - terraform       # from HashiCorp's apt repo (added in roles/base); not covered by the snapshot pin

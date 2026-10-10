@@ -1,0 +1,65 @@
+name: ring-rotate
+# Moves the patch rings forward and opens a pull request for approval.
+#   Weekly (Monday):  ring0-pilot -> today, ring1-early -> ring0's old date, ring2-broad -> ring1's old date
+#                     so each snapshot soaks one week in pilot and one week in early before everyone gets it.
+#   Manual "emergency": all three rings -> today (urgent CVE).
+# Merging the PR is the approval; laptops pick it up on their next ansible-pull (~35 min).
+#
+# One-time repo setting: Settings > Actions > General > Workflow permissions >
+#   "Read and write" + "Allow GitHub Actions to create and approve pull requests".
+
+on:
+  schedule:
+    - cron: "0 13 * * 1"   # Mondays 13:00 UTC (09:00 Toronto in summer)
+  workflow_dispatch:
+    inputs:
+      emergency:
+        description: "Move ALL rings to today (urgent fix)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  rotate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compute new ring dates
+        env:
+          EMERGENCY: ${{ inputs.emergency || false }}
+        run: |
+          python3 - <<'PY'
+          import os, re, datetime
+          p = "group_vars/all.yml"
+          s = open(p).read()
+          def get(ring):
+              return re.search(rf'^\s+{ring}:\s*"([0-9]{{8}}T[0-9]{{6}}Z)"', s, re.M).group(1)
+          today = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT000000Z")
+          if os.environ.get("EMERGENCY") == "true":
+              new = {"ring0-pilot": today, "ring1-early": today, "ring2-broad": today}
+          else:
+              new = {"ring0-pilot": today, "ring1-early": get("ring0-pilot"), "ring2-broad": get("ring1-early")}
+          for ring, date in new.items():
+              s = re.sub(rf'^(\s+{ring}:\s*)"[^"]*"', rf'\g<1>"{date}"', s, flags=re.M)
+          open(p, "w").write(s)
+          print(new)
+          PY
+
+      - name: Open pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if git diff --quiet; then echo "Rings already current"; exit 0; fi
+          branch="ring-rotate-$(date -u +%Y%m%d-%H%M)"
+          git config user.name  "ring-rotate[bot]"
+          git config user.email "ring-rotate@users.noreply.github.com"
+          git checkout -b "$branch"
+          git commit -am "Rotate patch rings ($(date -u +%F))"
+          git push -u origin "$branch"
+          gh pr create --base main --head "$branch" \
+            --title "Rotate patch rings ($(date -u +%F))" \
+            --body "$(git diff HEAD~1 -- group_vars/all.yml | grep '^[-+] ')"
