@@ -22,3 +22,26 @@ base_packages:
   - curl
   - tree
   - terraform       # from HashiCorp's apt repo (added in roles/base); not covered by the snapshot pin
+
+# Desktop layer (roles/desktop): GNOME + dev/collab apps from the provisioning package.
+# On for every host in this test; set false to keep a host on plain Server.
+desktop_enabled: true
+
+desktop_packages:
+  - ubuntu-desktop-minimal   # Dell laptops: ubuntu-desktop + Dell OEM meta instead
+  - gdm3
+
+desktop_force_xorg: true     # WaylandEnable=false in GDM, as module 05 does
+
+desktop_apt_apps:            # Ubuntu archive, so the ring snapshot pin covers them
+  - wireshark
+  - docker.io
+
+desktop_snaps:
+  - { name: code, classic: true }   # VS Code
+  - { name: teams-for-linux }
+  - { name: vlc }
+
+desktop_debs:                # vendor downloads, installed only if missing
+  - { name: google-chrome-stable, url: "https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb" }
+  - { name: zoom, url: "https://zoom.us/client/latest/zoom_amd64.deb" }

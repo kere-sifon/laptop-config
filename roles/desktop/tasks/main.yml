@@ -1,0 +1,91 @@
+---
+# Desktop layer on top of the Server build: GNOME (minimal) + the dev/collab apps from the
+# provisioning package (module 05). Only uses what ships with ansible-core: no community.general.
+#
+# Networking: the desktop hands interfaces to NetworkManager. The renderer switch is written to
+# netplan but NOT applied live (a live networkd -> NetworkManager handoff hangs); it takes effect
+# on the next reboot, and this role flags that reboot instead of doing it.
+
+- name: Desktop packages (GNOME + GDM)
+  ansible.builtin.apt:
+    name: "{{ desktop_packages }}"
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+  register: desktop_install
+
+- name: Force Xorg instead of Wayland in GDM
+  ansible.builtin.lineinfile:
+    path: /etc/gdm3/custom.conf
+    regexp: '^#?\s*WaylandEnable='
+    line: WaylandEnable=false
+    insertafter: '^\[daemon\]'
+  when: desktop_force_xorg | bool
+  register: xorg_conf
+
+# Only for a wired interface the installer configured through netplan (eth*/en*). On the real
+# laptops Wi-Fi is already NetworkManager's, so there is nothing to hand over.
+- name: Hand the wired interface to NetworkManager (applied on next boot, never live)
+  ansible.builtin.copy:
+    dest: /etc/netplan/90-zt-networkmanager.yaml
+    mode: "0600"
+    content: |
+      # Managed by laptop-config (roles/desktop). Renderer + dhcp-identifier in one file so the
+      # DHCP lease (and IP) survives the switch from networkd.
+      network:
+        version: 2
+        renderer: NetworkManager
+        ethernets:
+          {{ ansible_default_ipv4.interface }}:
+            dhcp4: true
+            dhcp-identifier: mac
+  when:
+    - ansible_default_ipv4.interface is defined
+    - ansible_default_ipv4.interface is match('e')
+  register: netplan_nm
+
+# --- Apps from the Ubuntu archive (covered by the ring snapshot pin) ---
+- name: Wireshark may capture as non-root (members of the wireshark group)
+  ansible.builtin.debconf:
+    name: wireshark-common
+    question: wireshark-common/install-setuid
+    vtype: boolean
+    value: "true"
+
+- name: Archive apps
+  ansible.builtin.apt:
+    name: "{{ desktop_apt_apps }}"
+    state: present
+
+# --- Snaps (refresh on snapd's own schedule, not the snapshot pin) ---
+- name: Snap apps
+  ansible.builtin.command: >-
+    snap install {{ item.name }}{{ ' --classic' if item.classic | default(false) else '' }}
+  args:
+    creates: "/snap/bin/{{ item.name }}"
+  loop: "{{ desktop_snaps }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+# --- Vendor .debs: installed once if missing. Chrome then updates from the Google repo its
+#     package adds; Zoom has no repo, so it stays at the installed version until re-installed. ---
+- name: Read installed packages
+  ansible.builtin.package_facts:
+    manager: apt
+
+- name: Vendor .debs (amd64 only)
+  ansible.builtin.apt:
+    deb: "{{ item.url }}"
+  loop: "{{ desktop_debs }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when:
+    - ansible_architecture == 'x86_64'
+    - item.name not in ansible_facts.packages
+
+- name: Flag a reboot (new desktop, display server or network renderer)
+  ansible.builtin.file:
+    path: /var/run/reboot-required
+    state: touch
+    mode: "0644"
+  when: desktop_install is changed or xorg_conf is changed or netplan_nm is changed

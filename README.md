@@ -7,6 +7,7 @@ repo over HTTPS and runs `local.yml` against itself. No SSH, no inbound ports, n
 laptop (systemd timer, every 30 min) --HTTPS--> this repo
       └── ansible-pull runs local.yml locally
             ├── role base       packages, login banner, markers
+            ├── role desktop    GNOME + dev/collab apps (when desktop_enabled: true)
             └── role patching   apt snapshot pin per ring (off until patching_enabled: true)
 ```
 
@@ -16,6 +17,7 @@ laptop (systemd timer, every 30 min) --HTTPS--> this repo
 | `local.yml` | Playbook ansible-pull runs |
 | `group_vars/all.yml` | Settings: `patching_enabled`, ring snapshot dates, base packages |
 | `roles/base` | Always-on baseline; writes `/etc/zt/ansible-state.json` |
+| `roles/desktop` | GNOME (minimal) + GDM on Xorg, Wireshark, Docker, VS Code, Teams for Linux, VLC, Chrome, Zoom; flags a reboot |
 | `roles/patching` | Snapshot pin + upgrade; writes `/etc/zt/patch-state.json` |
 | `bootstrap/install-ansible-pull.sh` | One-time install of ansible-core, wrapper, service, timer |
 | `fleet/policies/ansible-pull-installed.sql` | Fleet policy: timer present; automation installs it if missing |
@@ -41,7 +43,8 @@ laptop (systemd timer, every 30 min) --HTTPS--> this repo
 | 3. No-op when unchanged | Start the service twice with no new commit | Second run skips the playbook; `ansible-last-check` still updates |
 | 4. Drift repair | `sudo apt remove -y htop`, then delete `/var/lib/zt/ansible-last-full` and start the service | htop comes back |
 | 5. Fleet sees it | Add `fleet/policies/ansible-pull-alive.sql` as a policy | zt-lab passes; stop the timer and it fails after 2h |
-| 6. Patching | Set `patching_enabled: true`, push | `/etc/apt/apt.conf.d/50zt-snapshot` appears, `patch-state.json` written |
+| 6. Desktop layer | `desktop_enabled: true`, push, then reboot once the pull finishes | GDM login screen; `nmcli dev` shows the wired NIC managed; apps in the GNOME app grid |
+| 7. Patching | Set `patching_enabled: true`, push | `/etc/apt/apt.conf.d/50zt-snapshot` appears, `patch-state.json` written |
 
 ## Notes
 - `--only-if-changed` keeps frequent runs cheap; a full run once a day repairs local drift.

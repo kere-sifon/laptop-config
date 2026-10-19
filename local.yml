@@ -8,6 +8,8 @@
 
   roles:
     - base
+    - role: desktop
+      when: desktop_enabled | default(false) | bool
     - role: patching
       when: patching_enabled | bool
 
@@ -24,4 +26,5 @@
         content: >-
           {{ {'commit': zt_commit.stdout,
               'applied_at': ansible_date_time.iso8601,
-              'patching_enabled': patching_enabled | bool} | to_json }}
+              'patching_enabled': patching_enabled | bool,
+              'desktop_enabled': desktop_enabled | default(false) | bool} | to_json }}
