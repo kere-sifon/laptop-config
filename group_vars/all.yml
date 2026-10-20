@@ -4,9 +4,9 @@ patching_enabled: true
 
 # Ring -> Ubuntu snapshot date. A promotion is a one-line change here.
 ring_snapshots:
-  ring0-pilot: "20261019T000000Z"
-  ring1-early: "20261010T000000Z"
-  ring2-broad: "20261010T000000Z"
+  ring0-pilot: "20261020T002746Z"
+  ring1-early: "20261020T002746Z"
+  ring2-broad: "20261020T002746Z"
 default_ring: ring2-broad
 
 # Removed if found. 'ansible' = full community bundle (universe, ESM-only fixes, ~35 CVEs);
