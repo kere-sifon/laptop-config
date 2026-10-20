@@ -8,10 +8,13 @@
 
   roles:
     - base
-    - role: desktop
-      when: desktop_enabled | default(false) | bool
+    # Patching before desktop: a ring change in Git must re-pin apt before anything new is
+    # installed. Otherwise a failed install on the old pin stops the play and the new pin
+    # never lands.
     - role: patching
       when: patching_enabled | bool
+    - role: desktop
+      when: desktop_enabled | default(false) | bool
 
   post_tasks:
     - name: Record which commit was applied (Fleet checks this)
